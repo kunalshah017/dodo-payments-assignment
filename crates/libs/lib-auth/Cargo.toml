@@ -1,0 +1,26 @@
+[package]
+name = "lib-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lib-core = { path = "../lib-core" }
+
+# Web
+axum.workspace = true
+tower.workspace = true
+
+# Database
+sqlx.workspace = true
+
+# Crypto
+sha2.workspace = true
+hex.workspace = true
+
+# Utilities
+uuid.workspace = true
+tracing.workspace = true
