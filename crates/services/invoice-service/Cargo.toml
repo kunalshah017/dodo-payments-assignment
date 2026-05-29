@@ -1,0 +1,61 @@
+[package]
+name = "invoice-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "invoice-service"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+lib-core = { path = "../../libs/lib-core" }
+lib-auth = { path = "../../libs/lib-auth" }
+
+# Web framework
+axum.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Database
+sqlx.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+dotenvy.workspace = true
+
+# HTTP client (for PSP calls)
+reqwest.workspace = true
+once_cell.workspace = true
+
+# URL validation
+url.workspace = true
+
+# Crypto (for webhook signing)
+hmac.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+
+# OpenAPI documentation
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+serde_json.workspace = true
