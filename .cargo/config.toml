@@ -1,0 +1,14 @@
+# Cargo config for development
+# For deployed environments, these should be managed by container env (docker-compose.yml)
+# See: https://doc.rust-lang.org/cargo/reference/config.html
+
+[env]
+# Scope down tracing to our crates only
+RUST_LOG = "invoice_service=debug,mock_psp=info,tower_http=debug"
+
+# -- Development Database
+# IMPORTANT: These are for `cargo run` local dev ONLY.
+# Docker uses docker-compose.yml environment section.
+DATABASE_URL = "postgres://postgres:postgres@localhost:5432/invoice_service"
+PSP_BASE_URL = "http://localhost:9090"
+PORT = "8080"

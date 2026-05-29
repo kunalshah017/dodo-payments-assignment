@@ -1,0 +1,11 @@
+# Build output
+/target
+
+# Environment
+.env
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/
