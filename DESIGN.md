@@ -198,9 +198,12 @@ Our HTTP client has a **5-second timeout**. When the PSP doesn't respond in 5s:
 2. Payment attempt stays in `pending` status
 3. API returns **202 Accepted** with the pending payment attempt
 4. Invoice remains in `open` state (not corrupted)
-5. Caller can: retry with the same idempotency key, or poll `GET /invoices/{id}` for state
+5. A **payment reconciliation worker** runs every 60s and expires pending payments older than 10 minutes (marks them `failed` with code `payment_expired`)
+6. After expiration, the invoice is unblocked for a new payment attempt with a different idempotency key
 
 **Why 5s timeout**: Balances responsiveness with giving the PSP time for normal operations (~100ms). The 30s tok_timeout is treated as unreachable.
+
+**Reconciliation pattern**: Same approach used by Razorpay — "Our payment gateway keeps polling acquiring banks periodically to see if a payment was updated to successful." In production, the reconciliation worker would query the PSP's `/charges/{id}` endpoint for the real status. Since our mock PSP has no status-check endpoint, we use a TTL-based expiration (10 min). The `has_active_attempt_tx` check also respects this TTL — pending attempts older than 10 min are ignored, allowing new attempts immediately.
 
 ### (c) PSP returns success but service crashes before persisting
 

@@ -97,6 +97,9 @@ async fn main() -> anyhow::Result<()> {
     // Start webhook retry worker in the background
     services::webhook_retry::start_worker(pool.clone());
 
+    // Start payment reconciliation worker (expires stale pending payments after 10 min)
+    services::payment_reconciliation::start_worker(pool.clone());
+
     let app_state = routes::AppState {
         db: pool,
         psp_base_url: cfg.PSP_BASE_URL.clone(),

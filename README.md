@@ -271,7 +271,7 @@ The Mock PSP delays 30 seconds for `tok_timeout`. The service handles this grace
 4. Handler catches the timeout → leaves payment as `pending`, does NOT update invoice
 5. Returns **202 Accepted** to client with the pending payment attempt
 6. Invoice stays in `open` state — not corrupted, not stuck
-7. Client can retry with the same idempotency key later
+7. A **reconciliation worker** (runs every 60s) expires pending payments older than 10 minutes → invoice auto-unblocks for new attempts
 
 **Why this design**:
 
@@ -279,6 +279,7 @@ The Mock PSP delays 30 seconds for `tok_timeout`. The service handles this grace
 - `pending` is an honest state — we don't know the outcome yet
 - Invoice stays `open` so a retry can succeed
 - No double-charge risk: same idempotency key returns same result on PSP side
+- No permanently stuck invoices: reconciliation worker auto-expires stale pending payments (Razorpay-style TTL)
 
 ---
 
@@ -286,7 +287,7 @@ The Mock PSP delays 30 seconds for `tok_timeout`. The service handles this grace
 
 - **Money**: All amounts in integer cents (i64). No floats anywhere in the money path.
 - **Concurrency**: Row-level `SELECT ... FOR UPDATE` locks prevent double-charging.
-- **PSP Timeout**: 5s client timeout → returns 202 Accepted with pending status.
+- **PSP Timeout**: 5s client timeout → returns 202 Accepted with pending status. Reconciliation worker expires stale payments after 10 min.
 - **Webhooks**: Async delivery (`tokio::spawn`), HMAC-SHA256 signed, exponential backoff retry (5 attempts: 1m, 5m, 30m, 2h, 24h).
 - **API Keys**: SHA-256 hashed in DB, 8-char prefix for identification, instant revocation via `revoked_at`.
 - **Idempotency**: `UNIQUE(invoice_id, idempotency_key)` — same key + same body returns cached result; different body returns 409.

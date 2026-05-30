@@ -29,6 +29,10 @@ impl PaymentBmc {
     /// Check if there is already a pending or succeeded payment attempt for this invoice.
     /// Must be called within the same transaction that holds the FOR UPDATE lock.
     /// This prevents concurrent requests from all creating payment attempts.
+    ///
+    /// Pending attempts older than 10 minutes are considered expired (PSP reconciliation
+    /// window exceeded) and are ignored — same pattern used by Razorpay/Stripe where
+    /// stale pending payments are resolved by a background reconciliation worker.
     pub async fn has_active_attempt_tx(
         tx: &mut Transaction<'static, Postgres>,
         invoice_id: Uuid,
@@ -36,7 +40,11 @@ impl PaymentBmc {
         let exists = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(
                 SELECT 1 FROM payment_attempts
-                WHERE invoice_id = $1 AND status IN ('pending', 'succeeded')
+                WHERE invoice_id = $1
+                  AND (
+                    status = 'succeeded'
+                    OR (status = 'pending' AND created_at > NOW() - INTERVAL '10 minutes')
+                  )
             )",
         )
         .bind(invoice_id)
