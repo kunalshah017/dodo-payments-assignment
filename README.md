@@ -2,6 +2,8 @@
 
 A minimal Invoice & Payment Service built in **Rust** with **Axum**, **PostgreSQL**, and a mock PSP. Businesses create invoices for their customers, customers pay invoices, and businesses receive signed webhooks for state changes.
 
+**GitHub**: [kunalshah017/dodo-payments-assignment](https://github.com/kunalshah017/dodo-payments-assignment)
+
 ## Quick Start
 
 ```bash
@@ -27,7 +29,6 @@ dodo_test_key_1234567890abcdef
 ## Architecture
 
 ```mermaid
-%%{init: {'theme':'neutral'}}%%
 graph LR
     A[Business<br/>API Client] -->|HTTP| B[Invoice Service<br/>Axum :8080]
     B -->|HTTP| C[Mock PSP<br/>Axum :9090]
@@ -50,7 +51,6 @@ crates/
 ### Request Flow (Payment Example)
 
 ```mermaid
-%%{init: {'theme':'neutral'}}%%
 sequenceDiagram
     participant C as Client
     participant A as Auth Middleware
@@ -76,7 +76,6 @@ sequenceDiagram
 ### Data Model
 
 ```mermaid
-%%{init: {'theme':'neutral'}}%%
 erDiagram
     businesses ||--o{ api_keys : has
     businesses ||--o{ customers : has
@@ -228,7 +227,6 @@ Returns **202 Accepted** with `status: "pending"` after ~5 seconds (client timeo
 ## Invoice State Machine
 
 ```mermaid
-%%{init: {'theme':'neutral'}}%%
 stateDiagram-v2
     direction LR
     [*] --> Draft
@@ -300,7 +298,7 @@ The Mock PSP delays 30 seconds for `tok_timeout`. The service handles this grace
 
 ## Demo Video
 
-> **TODO**: Add Loom/recording link here
+[Watch the demo walkthrough on Google Drive](https://drive.google.com/file/d/1vq8i1J4_phB2UaprKQmdkeiXGJ3UcNpo/view?usp=sharing)
 
 ## Running Tests
 
