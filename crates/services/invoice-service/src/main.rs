@@ -22,7 +22,7 @@ use lib_core::model::webhook::*;
     info(
         title = "Dodo Payments - Invoice & Payment Service",
         version = "0.1.0",
-        description = "Production-grade invoice and payment processing API",
+        description = "Production invoice and payment processing API",
     ),
     paths(
         routes::v1::customers::create_customer,

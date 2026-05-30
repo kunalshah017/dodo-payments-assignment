@@ -270,7 +270,13 @@ Events are marked as failed (attempts >= 5, delivered_at = NULL). Businesses can
 
 ### Decoupling from API response
 
-Webhook delivery uses `tokio::spawn` — a fire-and-forget background task. The API response returns immediately after the database write. If delivery fails, the retry mechanism picks it up independently.
+**Transactional Outbox Pattern**: Webhook events are inserted in the **same database transaction** as the state change (e.g., `mark_paid` + webhook event INSERT are atomic). This guarantees:
+
+1. **No lost events**: If the transaction commits, the event is durable. If the process crashes after commit but before delivery, the retry worker picks it up.
+2. **No stale payloads**: The payload is built from the `RETURNING *` row inside the transaction — captures the exact point-in-time state.
+3. **No blocking**: After commit, delivery is attempted via `tokio::spawn` (fire-and-forget). If it fails, the retry worker handles it independently.
+
+This is the same pattern used by Stripe, Shopify, and other production billing systems to guarantee webhook reliability at scale.
 
 ---
 
@@ -302,4 +308,4 @@ Webhook delivery uses `tokio::spawn` — a fire-and-forget background task. The 
 
 1. **Observability** — Need structured logging to a centralized system (e.g., Datadog/Grafana), metrics (Prometheus), and distributed tracing (OpenTelemetry). Currently only stdout logging.
 2. **Rate limiting** — No protection against API abuse. Would implement per-key rate limits with token bucket algorithm.
-3. **Webhook retry robustness** — Current retry worker uses a simple tokio::spawn polling loop. Production would use a dedicated job queue (e.g., RabbitMQ/SQS) with dead-letter handling for guaranteed delivery.
+3. **Dedicated webhook delivery queue** — Current retry worker uses a polling loop with `tokio::spawn`. Production would use a dedicated job queue (e.g., RabbitMQ/SQS) with dead-letter handling, separate worker processes, and per-endpoint circuit breakers. The transactional outbox guarantees durability, but delivery throughput would benefit from a dedicated consumer.

@@ -3,6 +3,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Extension, Json,
 };
+use sqlx;
 use uuid::Uuid;
 
 use lib_core::bmc::invoice::InvoiceBmc;
@@ -117,55 +118,104 @@ pub async fn pay_invoice(
     // Update payment attempt and invoice based on PSP result
     match psp_result {
         Ok(psp_response) if psp_response.status == "succeeded" => {
+            // Transactional outbox: state change + webhook enqueue in ONE transaction.
+            // Guarantees: no lost events on crash, payload captures exact point-in-time state.
+            let mut tx = state.db.begin().await?;
+
             let updated =
-                PaymentBmc::mark_succeeded(&state.db, attempt.id, &psp_response.psp_ref).await?;
+                PaymentBmc::mark_succeeded_tx(&mut tx, attempt.id, &psp_response.psp_ref).await?;
+            let paid_invoice = InvoiceBmc::mark_paid_tx(&mut tx, invoice_id).await?;
 
-            InvoiceBmc::mark_paid(&state.db, invoice_id).await?;
-
-            // Dispatch webhook
-            webhook_dispatcher::dispatch_event(
-                &state.db,
+            let payload = webhook_dispatcher::build_event_payload(
+                &lib_core::model::webhook::WebhookEventType::InvoicePaid,
+                &paid_invoice,
+            );
+            let event_ids = webhook_dispatcher::enqueue_events_tx(
+                &mut tx,
                 ctx.business_id(),
                 lib_core::model::webhook::WebhookEventType::InvoicePaid,
-                &invoice,
+                &payload,
             )
             .await;
+
+            tx.commit().await?;
+
+            // Fire-and-forget delivery (events are already durable in DB)
+            webhook_dispatcher::spawn_delivery(&state.db, event_ids);
 
             Ok((StatusCode::OK, Json(updated.into())))
         }
         Ok(psp_response) => {
             // PSP returned a definitive failure (declined, invalid token, etc.)
-            let updated =
-                PaymentBmc::mark_failed(&state.db, attempt.id, &psp_response.code).await?;
+            // Invoice stays open — payload reflects current DB state via tx read.
+            let mut tx = state.db.begin().await?;
 
-            webhook_dispatcher::dispatch_event(
-                &state.db,
+            let updated =
+                PaymentBmc::mark_failed_tx(&mut tx, attempt.id, &psp_response.code).await?;
+
+            // Re-read invoice inside tx for authoritative state in webhook payload
+            let invoice_now = sqlx::query_as::<_, lib_core::model::invoice::Invoice>(
+                "SELECT * FROM invoices WHERE id = $1",
+            )
+            .bind(invoice_id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let payload = webhook_dispatcher::build_event_payload(
+                &lib_core::model::webhook::WebhookEventType::InvoicePaymentFailed,
+                &invoice_now,
+            );
+            let event_ids = webhook_dispatcher::enqueue_events_tx(
+                &mut tx,
                 ctx.business_id(),
                 lib_core::model::webhook::WebhookEventType::InvoicePaymentFailed,
-                &invoice,
+                &payload,
             )
             .await;
+
+            tx.commit().await?;
+
+            webhook_dispatcher::spawn_delivery(&state.db, event_ids);
 
             Ok((StatusCode::OK, Json(updated.into())))
         }
         Err(psp_client::PspError::ClientError(status_code)) => {
-            // PSP rejected the request (4xx) — this is a terminal failure
+            // PSP rejected the request (4xx) — terminal failure
             let error_code = format!("psp_rejected_{}", status_code);
-            let updated =
-                PaymentBmc::mark_failed(&state.db, attempt.id, &Some(error_code)).await?;
 
-            webhook_dispatcher::dispatch_event(
-                &state.db,
+            let mut tx = state.db.begin().await?;
+
+            let updated =
+                PaymentBmc::mark_failed_tx(&mut tx, attempt.id, &Some(error_code)).await?;
+
+            let invoice_now = sqlx::query_as::<_, lib_core::model::invoice::Invoice>(
+                "SELECT * FROM invoices WHERE id = $1",
+            )
+            .bind(invoice_id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let payload = webhook_dispatcher::build_event_payload(
+                &lib_core::model::webhook::WebhookEventType::InvoicePaymentFailed,
+                &invoice_now,
+            );
+            let event_ids = webhook_dispatcher::enqueue_events_tx(
+                &mut tx,
                 ctx.business_id(),
                 lib_core::model::webhook::WebhookEventType::InvoicePaymentFailed,
-                &invoice,
+                &payload,
             )
             .await;
+
+            tx.commit().await?;
+
+            webhook_dispatcher::spawn_delivery(&state.db, event_ids);
 
             Ok((StatusCode::OK, Json(updated.into())))
         }
         Err(e) => {
             // PSP timeout or server error — leave payment in pending state (retryable)
+            // No webhook: we don't know the outcome. No state change to report.
             tracing::error!(error = %e, "PSP call failed for payment attempt {}", attempt.id);
 
             let pending = PaymentBmc::pending_response(&attempt);

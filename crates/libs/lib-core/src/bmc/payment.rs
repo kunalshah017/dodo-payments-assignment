@@ -92,6 +92,25 @@ impl PaymentBmc {
         Ok(attempt)
     }
 
+    /// Mark payment as succeeded within an existing transaction
+    pub async fn mark_succeeded_tx(
+        tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+        id: Uuid,
+        psp_ref: &Option<String>,
+    ) -> Result<PaymentAttempt> {
+        let attempt = sqlx::query_as::<_, PaymentAttempt>(
+            "UPDATE payment_attempts SET status = 'succeeded', psp_ref = $2, updated_at = NOW()
+             WHERE id = $1
+             RETURNING *",
+        )
+        .bind(id)
+        .bind(psp_ref)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        Ok(attempt)
+    }
+
     /// Mark payment as failed with failure code
     pub async fn mark_failed(
         pool: &PgPool,
@@ -106,6 +125,25 @@ impl PaymentBmc {
         .bind(id)
         .bind(failure_code)
         .fetch_one(pool)
+        .await?;
+
+        Ok(attempt)
+    }
+
+    /// Mark payment as failed within an existing transaction
+    pub async fn mark_failed_tx(
+        tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+        id: Uuid,
+        failure_code: &Option<String>,
+    ) -> Result<PaymentAttempt> {
+        let attempt = sqlx::query_as::<_, PaymentAttempt>(
+            "UPDATE payment_attempts SET status = 'failed', failure_code = $2, updated_at = NOW()
+             WHERE id = $1
+             RETURNING *",
+        )
+        .bind(id)
+        .bind(failure_code)
+        .fetch_one(&mut **tx)
         .await?;
 
         Ok(attempt)

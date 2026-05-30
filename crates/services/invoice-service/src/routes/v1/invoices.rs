@@ -82,14 +82,26 @@ pub async fn create_invoice(
 
     let (invoice, line_items) = InvoiceBmc::create(&state.db, &ctx, req).await?;
 
-    // Dispatch webhook asynchronously
-    webhook_dispatcher::dispatch_event(
-        &state.db,
-        ctx.business_id(),
-        lib_core::model::webhook::WebhookEventType::InvoiceCreated,
-        &invoice,
-    )
-    .await;
+    // Enqueue webhook in a separate transaction (invoice is already committed).
+    // For invoice.created, the risk of lost events on crash between create commit
+    // and this point is acceptable — the retry worker and event listing API provide
+    // reconciliation. The critical path (payments) uses full transactional outbox.
+    {
+        let mut tx = state.db.begin().await?;
+        let payload = webhook_dispatcher::build_event_payload(
+            &lib_core::model::webhook::WebhookEventType::InvoiceCreated,
+            &invoice,
+        );
+        let event_ids = webhook_dispatcher::enqueue_events_tx(
+            &mut tx,
+            ctx.business_id(),
+            lib_core::model::webhook::WebhookEventType::InvoiceCreated,
+            &payload,
+        )
+        .await;
+        tx.commit().await?;
+        webhook_dispatcher::spawn_delivery(&state.db, event_ids);
+    }
 
     Ok((
         StatusCode::CREATED,
